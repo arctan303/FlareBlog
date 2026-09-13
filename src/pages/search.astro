@@ -1,0 +1,266 @@
+---
+import { Icon } from 'astro-icon/components';
+/**
+ * 搜索页
+ * Pagefind 构建时索引，纯前端搜索
+ * 开发模式下自动降级为 API 模糊匹配搜索
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="搜索" description="搜索文章">
+  <div class="max-w-3xl mx-auto py-8">
+    <div class="page-enter">
+      <button 
+          data-back-button
+          data-search-back
+          class="stagger-item-top group flex items-center gap-2 text-sm text-[var(--muted)] hover:text-[var(--ink)] transition-colors mb-10 cursor-pointer"
+          style="--stagger-idx: 1;"
+      >
+          <Icon name="lucide:arrow-left" class="group-hover:-translate-x-1 transition-transform" aria-hidden="true" /> 返回上一页
+      </button>
+
+      <h1 class="stagger-item-top kami-serif text-3xl font-semibold text-[var(--ink-strong)] mb-8" style="--stagger-idx: 2;">搜索文章</h1>
+
+    <div class="stagger-item-top relative mb-8" style="--stagger-idx: 3;">
+      <div class="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
+        <Icon name="lucide:search" class="text-[var(--muted-light)]" aria-hidden="true" />
+      </div>
+      <input
+        type="search"
+        class="w-full pl-12 pr-4 py-4 bg-[var(--paper-card)] border border-[var(--line)] rounded-lg text-[var(--text)] placeholder-[var(--muted-light)] focus:outline-none focus:ring-2 focus:ring-[var(--ink)]/20 focus:border-[var(--ink)] transition-[border-color,box-shadow] paper-shadow"
+        id="search-input"
+        placeholder="输入关键词搜索..."
+        autofocus
+      />
+    </div>
+
+    <div id="search-results" class="space-y-6"></div>
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  import { API_BASE } from '../config';
+
+  const SEARCH_RETURN_KEY = 'search:return-state';
+
+  function formatDate(ts: number) {
+    const d = new Date(ts * 1000);
+    return d.toISOString().split('T')[0];
+  }
+
+  async function initSearch() {
+    const input = document.getElementById('search-input') as HTMLInputElement;
+    const results = document.getElementById('search-results')!;
+    let debounceTimer: number;
+    let queryVersion = 0;
+    let hasRestoredScroll = false;
+
+    const syncQueryUrl = (query: string): void => {
+      const url = new URL(window.location.href);
+      if (query) url.searchParams.set('q', query);
+      else url.searchParams.delete('q');
+      history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+    };
+
+    const restoreSearchScroll = (): void => {
+      if (hasRestoredScroll) return;
+      try {
+        const rawState = sessionStorage.getItem(SEARCH_RETURN_KEY);
+        if (!rawState) return;
+        const state = JSON.parse(rawState) as { searchUrl?: string; scrollY?: number };
+        const currentUrl = window.location.pathname + window.location.search;
+        if (state.searchUrl !== currentUrl || !Number.isFinite(state.scrollY)) return;
+        hasRestoredScroll = true;
+        sessionStorage.removeItem(SEARCH_RETURN_KEY);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => window.scrollTo(0, Number(state.scrollY)));
+        });
+      } catch {
+        sessionStorage.removeItem(SEARCH_RETURN_KEY);
+      }
+    };
+
+    results.addEventListener('click', event => {
+      const target = event.target instanceof Element ? event.target : null;
+      const link = target?.closest<HTMLAnchorElement>('a[href^="/post/"]');
+      if (
+        !link ||
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) return;
+
+      sessionStorage.setItem(SEARCH_RETURN_KEY, JSON.stringify({
+        articlePath: new URL(link.href).pathname,
+        searchUrl: window.location.pathname + window.location.search,
+        scrollY: window.scrollY
+      }));
+    });
+
+    const escapeHtml = (unsafe: string) => {
+        return (unsafe || '').toString()
+             .replace(/&/g, "&amp;")
+             .replace(/</g, "&lt;")
+             .replace(/>/g, "&gt;")
+             .replace(/"/g, "&quot;")
+             .replace(/'/g, "&#039;");
+    };
+
+    const sanitizeSummary = (unsafe: string) => {
+        return escapeHtml(unsafe).replace(/&lt;mark&gt;/g, '<mark>').replace(/&lt;\/mark&gt;/g, '</mark>');
+    };
+
+    const renderCard = (url: string, title: string, summary: string, meta: any = {}) => `
+      <a href="${escapeHtml(url)}" class="scroll-reveal block group p-6 lg:p-7 border border-[var(--line)] hover:border-[var(--ink)] transition-colors duration-200 rounded-lg bg-[var(--paper-card)] paper-shadow paper-lift">
+        <div class="flex flex-wrap items-center gap-3 text-xs lg:text-sm text-[var(--muted)] mb-3">
+            ${meta.author ? `<span class="font-medium text-[var(--ink)]">${escapeHtml(meta.author)}</span><span>|</span>` : ''}
+            ${meta.date ? `<time>${escapeHtml(meta.date)}</time><span>|</span>` : ''}
+            ${meta.views ? `<span>${escapeHtml(String(meta.views))} views</span><span>|</span>` : ''}
+            ${meta.category ? `<span>${escapeHtml(meta.category)}</span>` : ''}
+        </div>
+        <h2 class="kami-serif text-xl sm:text-2xl font-semibold text-[var(--ink-strong)] mb-3 group-hover:text-[var(--ink)] transition-colors">
+          ${escapeHtml(title || '无标题')}
+        </h2>
+        <p class="kami-serif text-[var(--muted)] leading-relaxed text-sm lg:text-base line-clamp-3">
+          ${sanitizeSummary(summary || '暂无摘要')}
+        </p>
+      </a>
+    `;
+
+    try {
+      // @ts-ignore - pagefind 在构建后才可用
+      const pagefindUrl = '/pagefind/pagefind.js';
+      const pagefind = await import(/* @vite-ignore */ pagefindUrl);
+      await pagefind.init();
+
+      input.addEventListener('input', () => {
+        const requestId = ++queryVersion;
+        syncQueryUrl(input.value.trim());
+        clearTimeout(debounceTimer);
+        debounceTimer = window.setTimeout(async () => {
+          const query = input.value.trim();
+          if (!query) {
+            results.innerHTML = '';
+            return;
+          }
+
+          const search = await pagefind.search(query);
+          if (requestId !== queryVersion) return;
+          if (search.results.length === 0) {
+            results.innerHTML = '<div class="py-16 text-center text-[var(--muted)]">未找到相关的文章</div>';
+            restoreSearchScroll();
+            return;
+          }
+
+          const items = await Promise.all(
+            search.results.slice(0, 20).map((r: any) => r.data())
+          );
+          if (requestId !== queryVersion) return;
+
+          results.innerHTML = items.map((item: any) =>
+            renderCard(item.url, item.meta?.title, item.excerpt, item.meta)
+          ).join('');
+          if ((window as any).__scrollRevealObserver) {
+              results.querySelectorAll('.scroll-reveal').forEach(el => (window as any).__scrollRevealObserver.observe(el));
+          }
+          restoreSearchScroll();
+        }, 300);
+      });
+    } catch {
+      // Pagefind 尚未构建时的降级：使用 API 本地搜索
+      console.warn("Pagefind 尚未准备好，启用开发环境下的直接 API 搜索降级模式");
+      let allArticles: any[] | null = null;
+      let loadPromise: Promise<void> | null = null;
+
+      const fetchArticles = async () => {
+        if (allArticles) return;
+        if (!loadPromise) {
+          loadPromise = (async () => {
+            try {
+              const res = await fetch(`${API_BASE}/api/public/articles?limit=100`);
+              if (res.ok) {
+                const data = await res.json();
+                allArticles = (data as any).data;
+              } else {
+                allArticles = [];
+              }
+            } catch (e) {
+              console.error("降级 API 搜索也失败了:", e);
+              allArticles = [];
+            }
+          })();
+        }
+        await loadPromise;
+      };
+
+      input.addEventListener('input', () => {
+        const requestId = ++queryVersion;
+        syncQueryUrl(input.value.trim());
+        clearTimeout(debounceTimer);
+        debounceTimer = window.setTimeout(async () => {
+          const query = input.value.trim().toLowerCase();
+          if (!query) {
+            results.innerHTML = '';
+            return;
+          }
+
+          if (!allArticles) {
+            results.innerHTML = '<div class="py-16 text-center text-[var(--muted)]">正在搜索...</div>';
+            await fetchArticles();
+          }
+
+          if (requestId !== queryVersion) return;
+
+          if (!allArticles) {
+            results.innerHTML = '<div class="py-16 text-center text-red-500">无法连接到 API 进行搜索调试。</div>';
+            return;
+          }
+
+          const matched = allArticles.filter(item => 
+            (item.title && item.title.toLowerCase().includes(query)) || 
+            (item.summary && item.summary.toLowerCase().includes(query)) ||
+            (item.category && item.category.toLowerCase().includes(query))
+          );
+
+          if (matched.length === 0) {
+            results.innerHTML = '<div class="py-16 text-center text-[var(--muted)]">未找到相关的文章 (调试 API)</div>';
+            restoreSearchScroll();
+            return;
+          }
+
+          results.innerHTML = matched.map((item: any) =>
+            renderCard(`/post/${item.id}`, item.title, item.summary, {
+              date: formatDate(item.created_at),
+              author: item.author || 'FlareBlog',
+              views: item.views,
+              category: item.category?.split(/[,，、|]+/)[0] || ''
+            })
+          ).join('');
+          if ((window as any).__scrollRevealObserver) {
+              results.querySelectorAll('.scroll-reveal').forEach(el => (window as any).__scrollRevealObserver.observe(el));
+          }
+          restoreSearchScroll();
+        }, 300);
+      });
+    }
+
+    const initialQuery = new URLSearchParams(window.location.search).get('q') || '';
+    if (initialQuery) {
+      input.value = initialQuery;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+
+  document.addEventListener('astro:page-load', () => {
+    const input = document.getElementById('search-input');
+    if (input && !input.dataset.initialized) {
+      input.dataset.initialized = 'true';
+      initSearch();
+    }
+  });
+</script>

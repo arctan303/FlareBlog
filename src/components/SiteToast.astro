@@ -1,0 +1,176 @@
+---
+// 全局通知 Toast 组件
+---
+
+<div id="site-toast-container" class="site-toast-container" aria-live="polite" aria-atomic="true">
+  <!-- 动态插入 Toast 项 -->
+</div>
+
+<style>
+  .site-toast-container {
+    position: fixed;
+    top: calc(1rem + env(safe-area-inset-top));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 120;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 90%;
+    max-width: 440px;
+    pointer-events: none;
+  }
+  
+  :global(.site-toast) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    line-height: 1.4;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+    pointer-events: auto;
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+    transition: opacity 220ms cubic-bezier(0.16, 1, 0.3, 1), transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  :global(.site-toast--visible) {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  :global(.site-toast--info) {
+    background: var(--paper-card);
+    border: 1px solid var(--line-strong);
+    color: var(--text);
+  }
+
+  :global(.site-toast--success) {
+    background: var(--paper-card);
+    border: 1px solid color-mix(in srgb, var(--success) 40%, var(--line));
+    color: var(--text);
+  }
+  :global(.site-toast--success .site-toast__icon) {
+    color: var(--success);
+  }
+
+  :global(.site-toast--error) {
+    background: var(--paper-card);
+    border: 1px solid color-mix(in srgb, var(--danger) 50%, var(--line));
+    color: var(--text);
+  }
+  :global(.site-toast--error .site-toast__icon) {
+    color: var(--danger);
+  }
+
+  :global(.site-toast--warning) {
+    background: var(--paper-card);
+    border: 1px solid color-mix(in srgb, var(--warning) 50%, var(--line));
+    color: var(--text);
+  }
+  :global(.site-toast--warning .site-toast__icon) {
+    color: var(--warning);
+  }
+
+  :global(.site-toast__icon) {
+    flex-shrink: 0;
+    font-size: 16px;
+  }
+
+  :global(.site-toast__message) {
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
+  }
+
+  :global(.site-toast__close) {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: color 150ms ease, background-color 150ms ease;
+  }
+
+  :global(.site-toast__close:hover) {
+    color: var(--text);
+    background: var(--line);
+  }
+</style>
+
+<script>
+  function setupSiteToast() {
+    if ((window as any).__siteToastInitialized) return;
+    (window as any).__siteToastInitialized = true;
+
+    window.showSiteToast = function(
+      message: string,
+      type: 'info' | 'success' | 'error' | 'warning' = 'info',
+      duration = 4000
+    ) {
+      const container = document.getElementById('site-toast-container');
+      if (!container) return;
+
+      const toast = document.createElement('div');
+      toast.className = `site-toast site-toast--${type}`;
+      toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+
+      let iconSvg = '';
+      if (type === 'success') {
+        iconSvg = `<svg class="site-toast__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`;
+      } else if (type === 'error') {
+        iconSvg = `<svg class="site-toast__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+      } else if (type === 'warning') {
+        iconSvg = `<svg class="site-toast__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+      } else {
+        iconSvg = `<svg class="site-toast__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+      }
+
+      toast.innerHTML = `
+        ${iconSvg}
+        <span class="site-toast__message"></span>
+        <button type="button" class="site-toast__close" aria-label="关闭通知">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      `;
+
+      const msgEl = toast.querySelector('.site-toast__message');
+      if (msgEl) msgEl.textContent = message;
+
+      const closeBtn = toast.querySelector('.site-toast__close');
+      let isRemoved = false;
+      const removeToast = () => {
+        if (isRemoved) return;
+        isRemoved = true;
+        toast.classList.remove('site-toast--visible');
+        setTimeout(() => toast.remove(), 240);
+      };
+
+      closeBtn?.addEventListener('click', removeToast);
+
+      container.appendChild(toast);
+      requestAnimationFrame(() => {
+        toast.classList.add('site-toast--visible');
+      });
+
+      if (duration > 0) {
+        setTimeout(removeToast, duration);
+      }
+    };
+  }
+
+  setupSiteToast();
+  document.addEventListener('astro:page-load', setupSiteToast);
+</script>

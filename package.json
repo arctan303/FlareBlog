@@ -1,0 +1,45 @@
+{
+  "name": "flareblog",
+  "type": "module",
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "workspaces": [
+    "worker"
+  ],
+  "scripts": {
+    "dev": "run-p dev:page dev:worker",
+    "dev:page": "astro dev",
+    "dev:worker": "npm run dev --workspace=flareblog-worker",
+    "db:init": "node scripts/init-local-db.mjs",
+    "build": "astro build",
+    "build:worker": "npm run typecheck --workspace=flareblog-worker",
+    "check": "astro check && npm run build:worker",
+    "test": "vitest run",
+    "test:security": "vitest run tests/security.test.ts tests/worker-security.test.ts",
+    "postbuild": "npx -y pagefind --site dist",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.9",
+    "@astrojs/sitemap": "^3.7.3",
+    "@iconify-json/fa6-brands": "^1.2.6",
+    "@iconify-json/lucide": "^1.2.116",
+    "@tailwindcss/vite": "^4.3.0",
+    "astro": "^6.4.6",
+    "astro-icon": "^1.1.5",
+    "dompurify": "^3.4.13",
+    "marked": "^18.0.4",
+    "sanitize-html": "^2.17.5",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^6.0.3"
+  },
+  "devDependencies": {
+    "@types/sanitize-html": "^2.16.1",
+    "dotenv": "^17.4.2",
+    "npm-run-all": "^4.1.5",
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,0 +1,71 @@
+---
+import { Icon } from 'astro-icon/components';
+/**
+ * 关于页
+ * SSG 静态生成
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+import pkg from '../../package.json';
+
+const techStack = ['Astro', 'Cloudflare Pages', 'Cloudflare Workers', 'D1 SQLite', 'TailwindCSS', 'TypeScript', 'Pagefind'];
+---
+
+<BaseLayout title="关于" description="关于 FlareBlog——一个部署在 Cloudflare 上的开源博客基座">
+  <div class="page-enter max-w-[46rem] mx-auto">
+    <button
+        data-back-button
+        class="stagger-item-top group flex items-center gap-2 text-sm text-[var(--muted)] hover:text-[var(--ink)] transition-colors mb-12 cursor-pointer"
+        style="--stagger-idx: 1;"
+    >
+        <Icon name="lucide:arrow-left" class="group-hover:-translate-x-1 transition-transform" aria-hidden="true" /> 返回上一页
+    </button>
+
+    <header class="stagger-item-top mb-14 border-b border-[var(--line)] pb-8" style="--stagger-idx: 2;">
+        <div class="flex items-center gap-5 mb-7">
+            <img src="/favicon.png" alt="FlareBlog" class="w-14 h-14 rounded-md border border-[var(--line)] dark:invert">
+            <div>
+              <h1 class="kami-serif text-3xl sm:text-4xl font-semibold text-[var(--ink-strong)] mb-2">关于 FlareBlog</h1>
+              <p class="text-xs text-[var(--muted-light)] font-mono">FlareBlog · v{pkg.version}</p>
+            </div>
+        </div>
+        <p class="kami-serif text-[var(--muted)] leading-[1.9] text-lg">
+            一个部署在 Cloudflare 上的开源博客基座。
+        </p>
+    </header>
+
+    <div class="space-y-14 mb-16">
+        <section class="stagger-item-bottom" style="--stagger-idx: 3;">
+            <h2 class="kami-serif text-xl font-semibold text-[var(--ink-strong)] mb-5 flex items-center gap-2">
+                <Icon name="lucide:user" class="text-[var(--muted-light)] text-sm" aria-hidden="true" /> 关于本站
+            </h2>
+            <div class="kami-serif text-[var(--text)] space-y-5 leading-[1.9]">
+                <p>FlareBlog 是一个开源博客基座：Astro 静态生成、Cloudflare Worker 提供 API、单个 D1 数据库。fork 之后配上你自己的 Cloudflare 账号，就能复刻一个功能完整的博客。</p>
+                <p>这里是你的"关于"页面——把它改成你自己的介绍、联系方式与站点故事。</p>
+            </div>
+        </section>
+
+        <section class="stagger-item-bottom border-t border-[var(--line)] pt-10" style="--stagger-idx: 4;">
+            <h2 class="kami-serif text-xl font-semibold text-[var(--ink-strong)] mb-5 flex items-center gap-2">
+                <Icon name="lucide:code" class="text-[var(--muted-light)] text-sm" aria-hidden="true" /> 技术栈
+            </h2>
+            <div class="flex flex-wrap gap-x-5 gap-y-3">
+                {techStack.map(tech => (
+                  <span class="text-sm text-[var(--muted)] border-b border-[var(--line-strong)] pb-1">
+                      {tech}
+                  </span>
+                ))}
+            </div>
+        </section>
+    </div>
+
+    <section class="stagger-item-bottom mb-16 border-t border-[var(--line)] pt-10" style="--stagger-idx: 5;">
+        <h2 class="kami-serif text-xl font-semibold text-[var(--ink-strong)] mb-6 flex items-center gap-2">
+            <Icon name="lucide:scale" class="text-[var(--muted-light)] text-sm" aria-hidden="true" /> 开源协议
+        </h2>
+        <div class="text-sm text-[var(--muted)] space-y-4 leading-[1.85]">
+            <p>本项目基于 MIT 协议开源，详见仓库中的 LICENSE 文件。</p>
+            <p>你可以自由使用、修改和分发本项目，欢迎把你的改进回馈给上游。</p>
+        </div>
+    </section>
+  </div>
+</BaseLayout>

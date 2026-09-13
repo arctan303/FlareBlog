@@ -1,0 +1,60 @@
+---
+export interface Props {
+  articleId: number;
+  initialViews: number;
+}
+
+import { API_BASE } from '../config';
+
+const { articleId, initialViews } = Astro.props;
+const apiBase = API_BASE;
+---
+
+<span class="view-count" id={`views-${articleId}`} data-article-id={articleId} data-api-base={apiBase}>
+  {initialViews} 阅读
+</span>
+
+<script>
+  function initializeViewCounter(element: HTMLElement): void {
+    if (element.dataset.initialized) return;
+    element.dataset.initialized = 'true';
+    const articleId = element.dataset.articleId;
+    const apiBase = element.dataset.apiBase;
+    if (!articleId || !apiBase) return;
+    const storageKey = `article-viewed:${articleId}`;
+
+    const shouldCountView = () => {
+      try {
+        const lastViewedAt = Number(localStorage.getItem(storageKey) || 0);
+        const now = Date.now();
+        if (lastViewedAt && now - lastViewedAt < 86400000) return false;
+        localStorage.setItem(storageKey, String(now));
+        return true;
+      } catch {
+        return true;
+      }
+    };
+
+    const syncView = async () => {
+      try {
+        const method = shouldCountView() ? 'POST' : 'GET';
+        const response = await fetch(`${apiBase}/api/public/articles/${articleId}/views`, { method });
+        if (!response.ok) return;
+        const data = await response.json() as { data?: { views?: number }; views?: number };
+        const views = data.data?.views ?? data.views;
+        if (typeof views === 'number') element.textContent = `${views} 阅读`;
+      } catch {
+        // View counters are non-critical.
+      }
+    };
+
+    if (document.visibilityState === 'visible') window.setTimeout(syncView, 2000);
+    else document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') window.setTimeout(syncView, 2000);
+    }, { once: true });
+  }
+
+  document.addEventListener('astro:page-load', () => {
+    document.querySelectorAll<HTMLElement>('.view-count').forEach(initializeViewCounter);
+  });
+</script>

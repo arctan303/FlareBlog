@@ -1,0 +1,156 @@
+---
+/**
+ * 文章列表布局组件 (用于首页和分类页)
+ */
+import ArticleCard from './ArticleCard.astro';
+import Pagination from './Pagination.astro';
+import { Icon } from 'astro-icon/components';
+
+export interface Props {
+    page: any;
+    categoryList: { name: string, count: number }[];
+    currentCategory: string; // 'all' for homepage
+    basePath: string; // '' for homepage, '/category/xxx' for category pages
+    heading?: string;
+    subheading?: string;
+    subheadingSecondary?: string;
+    emptyMessage?: string;
+    emptyIcon?: string;
+}
+
+const { 
+    page, 
+    categoryList, 
+    currentCategory, 
+    basePath,
+    heading = 'FlareBlog',
+    subheading = '基于 Cloudflare 构建的开源博客基座。',
+    subheadingSecondary = '探索、思考与记录，分享技术实践与每一个灵感。',
+    emptyMessage = "还没有文章，敬请期待...",
+    emptyIcon = "lucide:notebook-pen"
+} = Astro.props;
+---
+
+<div>
+    <header class="stagger-item-top mb-12 max-w-3xl border-b border-[var(--line)] pb-8" style="--stagger-idx: 1;">
+        <h1 class="kami-serif text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-normal text-[var(--ink-strong)] mb-4">
+            {heading}
+        </h1>
+        <p class="kami-serif text-[var(--muted)] leading-relaxed text-base lg:text-lg">
+            {subheading}
+        </p>
+        {subheadingSecondary && (
+        <p class="kami-serif mt-2 text-sm sm:text-base text-[var(--muted-light)] leading-relaxed">
+            {subheadingSecondary}
+        </p>
+        )}
+    </header>
+
+    <!-- 分类导航 (服务端路由) -->
+    {categoryList.length > 0 && (
+    <div id="category-nav" class="stagger-item-top mb-0 -mx-5 sm:mx-0 border-b border-[var(--line)] pb-4 sm:pb-5" style="--stagger-idx: 2;">
+        <div>
+            <div class="px-5 sm:px-0 mb-2 sm:mb-3">
+                <span class="text-sm font-medium text-[var(--muted)]">分类：</span>
+            </div>
+            <div data-category-scroll class="overflow-x-auto scrollbar-hide px-5 sm:px-0">
+                <div class="flex gap-2 items-center min-w-max">
+                    <a href="/" data-category-link class={`px-3 py-1.5 text-sm rounded-md border transition-colors shrink-0 ${currentCategory === 'all' ? 'bg-[var(--paper-card)] text-[var(--ink-strong)] border-[var(--ink)]' : 'bg-transparent border-[var(--line)] text-[var(--muted)] hover:text-[var(--ink)] hover:border-[var(--line-strong)]'}`}>
+                        全部 ({categoryList.reduce((sum, cat) => sum + cat.count, 0)})
+                    </a>
+                    {categoryList.map(cat => {
+                        const isActive = cat.name === currentCategory;
+                        return (
+                        <a href={`/category/${cat.name}`} data-category-link class={`px-3 py-1.5 text-sm rounded-md border transition-colors shrink-0 ${isActive ? 'bg-[var(--paper-card)] text-[var(--ink-strong)] border-[var(--ink)]' : 'bg-transparent border-[var(--line)] text-[var(--muted)] hover:text-[var(--ink)] hover:border-[var(--line-strong)]'}`}>
+                            {cat.name} ({cat.count})
+                        </a>
+                        )
+                    })}
+                </div>
+            </div>
+        </div>
+    </div>
+    )}
+
+    <!-- 内容区：应用渐变动画 -->
+    <div class="page-enter">
+      <!-- 文章列表 -->
+      <div id="article-list" class="scroll-mt-24 flex flex-col">
+        {page.data.length > 0 ? (
+          page.data.map((article: any) => (
+            <ArticleCard article={article} class="scroll-reveal" />
+          ))
+        ) : (
+          <div class="text-center py-16">
+              <Icon name={emptyIcon} class="text-4xl text-[var(--line-strong)] mb-4 mx-auto" aria-hidden="true" />
+              <p class="text-[var(--muted)]">
+                  {emptyMessage}
+              </p>
+          </div>
+        )}
+      </div>
+
+      <!-- 分页 -->
+      <div class="scroll-reveal flex justify-center mt-16">
+        <Pagination currentPage={page.currentPage} totalPages={page.lastPage} basePath={basePath} />
+      </div>
+    </div>
+</div>
+
+<script>
+    const CATEGORY_POSITION_KEY = 'article-list:category-position';
+    let categoryPositionController: AbortController | null = null;
+    let categoryPositionFrame = 0;
+
+    document.addEventListener('astro:page-load', () => {
+        categoryPositionController?.abort();
+        if (categoryPositionFrame) cancelAnimationFrame(categoryPositionFrame);
+        categoryPositionController = new AbortController();
+        const { signal } = categoryPositionController;
+        const categoryNav = document.getElementById('category-nav');
+        const categoryScroll = categoryNav?.querySelector<HTMLElement>('[data-category-scroll]');
+
+        if (categoryNav) {
+            document.querySelectorAll<HTMLAnchorElement>('[data-category-link]').forEach(link => {
+                link.addEventListener('click', event => {
+                    if (
+                        event.defaultPrevented ||
+                        event.button !== 0 ||
+                        event.metaKey ||
+                        event.ctrlKey ||
+                        event.shiftKey ||
+                        event.altKey
+                    ) return;
+
+                    sessionStorage.setItem(CATEGORY_POSITION_KEY, JSON.stringify({
+                        pathname: new URL(link.href).pathname,
+                        viewportTop: categoryNav.getBoundingClientRect().top,
+                        scrollLeft: categoryScroll?.scrollLeft || 0
+                    }));
+                }, { signal });
+            });
+        }
+
+        const storedPosition = sessionStorage.getItem(CATEGORY_POSITION_KEY);
+        if (!categoryNav || !storedPosition) return;
+        sessionStorage.removeItem(CATEGORY_POSITION_KEY);
+
+        try {
+            const position = JSON.parse(storedPosition) as { pathname?: string; viewportTop?: number; scrollLeft?: number };
+            if (position.pathname !== window.location.pathname || !Number.isFinite(position.viewportTop)) return;
+
+            categoryPositionFrame = requestAnimationFrame(() => {
+                categoryPositionFrame = requestAnimationFrame(() => {
+                    categoryPositionFrame = 0;
+                    if (categoryScroll && Number.isFinite(position.scrollLeft)) {
+                        categoryScroll.scrollLeft = Number(position.scrollLeft);
+                    }
+                    const delta = categoryNav.getBoundingClientRect().top - Number(position.viewportTop);
+                    if (Math.abs(delta) > 1) window.scrollBy(0, delta);
+                });
+            });
+        } catch {
+            // Ignore invalid session data and keep the router's default scroll position.
+        }
+    });
+</script>

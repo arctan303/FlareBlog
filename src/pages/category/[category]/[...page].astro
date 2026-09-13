@@ -1,0 +1,50 @@
+---
+/**
+ * 分类归档页 - 文章列表 (支持分页)
+ */
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import ArticleListLayout from '../../../components/ArticleListLayout.astro';
+import { getAllArticles, getCategories } from '../../../lib/api';
+import { parseCategories } from '../../../lib/utils';
+
+export async function getStaticPaths({ paginate }: any) {
+  const articles = await getAllArticles();
+  const categoryList = await getCategories();
+  
+  // 对于每个分类，生成对应的分页
+  return categoryList.flatMap(cat => {
+    const catName = cat.name;
+    const filteredArticles = articles.filter(article => {
+        const cats = parseCategories(article.category);
+        return cats.includes(catName);
+    });
+    
+    const sortedArticles = [...filteredArticles].sort((a, b) => {
+      return b.created_at - a.created_at;
+    });
+
+    return paginate(sortedArticles, {
+      params: { category: catName },
+      pageSize: 10
+    });
+  });
+}
+
+const { page } = Astro.props;
+const { category } = Astro.params;
+const categoryList = await getCategories();
+---
+
+<BaseLayout title={`分类：${category}`} description={`属于 ${category} 分类的文章`}>
+  <ArticleListLayout
+    page={page}
+    categoryList={categoryList}
+    currentCategory={category}
+    basePath={`/category/${category}`}
+    heading={`分类：${category}`}
+    subheading={`属于「${category}」分类的文章。`}
+    subheadingSecondary=""
+    emptyMessage="该分类下暂时没有文章。"
+    emptyIcon="lucide:folder-open"
+  />
+</BaseLayout>

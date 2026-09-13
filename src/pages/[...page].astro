@@ -1,0 +1,26 @@
+---
+/**
+ * 首页 - 文章列表 (支持分页)
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ArticleListLayout from '../components/ArticleListLayout.astro';
+import { getAllArticles, getCategories } from '../lib/api';
+
+export async function getStaticPaths({ paginate }: any) {
+  const articles = await getAllArticles();
+  return paginate(articles, { pageSize: 10 });
+}
+
+const { page } = Astro.props;
+const categoryList = await getCategories();
+const currentCategory = 'all';
+---
+
+<BaseLayout title="首页" description="FlareBlog 是一个部署在 Cloudflare 上的开源博客基座，支持文章、分类、搜索、评论与浏览量统计。">
+  <ArticleListLayout
+    page={page}
+    categoryList={categoryList}
+    currentCategory={currentCategory}
+    basePath=""
+  />
+</BaseLayout>

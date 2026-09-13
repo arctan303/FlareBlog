@@ -1,0 +1,22 @@
+# 本地开发专用 Worker 配置。生产部署使用 wrangler.toml。
+name = "flareblog-local"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "flareblog-db-local"
+database_id = "00000000-0000-4000-8000-000000000001"
+
+[vars]
+# 本地开发公开与非敏感配置（直接在配置文件中维护）
+CORS_ORIGINS = "http://127.0.0.1:4321, http://localhost:4321"
+# Cloudflare 官方测试站点密钥：本地无需真实 Turnstile 账号
+TURNSTILE_SITE_KEY = "1x00000000000000000000AA"
+
+# -----------------------------------------------------------------------------
+# ⚠️ 本地敏感凭据放在 worker/.dev.vars（参考 .dev.vars.example），不要提交到 Git：
+# - BUILD_API_TOKEN: 静态构建 API 令牌
+# - ADMIN_API_KEY: 管理接口密钥
+# - TURNSTILE_SECRET_KEY: 可选，Cloudflare 官方测试密钥为 1x0000000000000000000000000000000AA
+# -----------------------------------------------------------------------------

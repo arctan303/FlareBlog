@@ -1,0 +1,62 @@
+---
+import { Icon } from 'astro-icon/components';
+/**
+ * 文章卡片组件
+ * 用于首页和分类页的文章列表
+ */
+import type { ArticleListItem } from '../lib/types';
+import { formatDate, parseCategories, formatViews } from '../lib/utils';
+
+export interface Props {
+  article: ArticleListItem;
+  class?: string;
+  style?: string | Record<string, any>;
+}
+
+const { article, class: className, style } = Astro.props;
+const categories = parseCategories(article.category);
+---
+
+<article id={`article-card-${article.id}`} data-article-id={article.id} data-card-url={`/post/${article.id}`} class={`group cursor-pointer py-6 sm:py-8 px-4 -mx-4 border-b border-l-2 border-b-[var(--line)] border-l-transparent hover:border-l-[var(--ink)] transition-all duration-300 article-card ${className || ''}`} style={style}>
+  <div class="flex flex-wrap items-center gap-3 text-xs lg:text-sm text-[var(--muted)] mb-4">
+      <span class="font-medium text-[var(--ink)]">{article.author || 'FlareBlog'}</span>
+      <span>·</span>
+      <time datetime={new Date(article.created_at * 1000).toISOString()}>
+        {formatDate(article.created_at)}
+      </time>
+      <span>·</span>
+      <span>{formatViews(article.views)} 阅读</span>
+  </div>
+  
+  {categories.length > 0 && (
+  <div class="flex flex-wrap gap-2 mb-4">
+      {categories.map(cat => (
+      <a href={`/category/${cat}`} class="category-tag inline-flex items-center gap-1.5 rounded-md border border-[var(--line)] px-2 py-1 text-[var(--ink)] text-xs transition-colors hover:border-[var(--line-strong)] hover:text-[var(--ink-strong)]">
+          <Icon name="lucide:folder" class="text-xs" aria-hidden="true" />
+          {cat}
+      </a>
+      ))}
+  </div>
+  )}
+  
+  <h2 class="kami-serif text-xl sm:text-2xl lg:text-[1.7rem] font-semibold text-[var(--ink-strong)] mb-3 leading-tight group-hover:text-[var(--ink)] transition-colors">
+      {article.is_pinned === 1 && (
+          <span class="sr-only">置顶文章：</span>
+          <Icon name="lucide:pin" class="inline-block text-lg text-[var(--muted)] align-baseline mr-2 hover:text-[var(--ink)] transition-colors" aria-hidden="true" />
+      )}
+      <a href={`/post/${article.id}`}>
+          {article.title}
+      </a>
+  </h2>
+  
+  {article.summary && (
+  <p class="kami-serif text-[var(--muted)] leading-[1.85] mb-5 line-clamp-2 text-sm lg:text-base">
+      {article.summary}
+  </p>
+  )}
+  
+  <a href={`/post/${article.id}`} class="inline-flex items-center gap-2 text-sm lg:text-base font-medium text-[var(--ink)] hover:text-[var(--ink-strong)] transition-colors duration-300">
+      阅读全文 
+      <Icon name="lucide:arrow-right" class="text-xs group-hover:translate-x-1 transition-transform duration-300" aria-hidden="true" />
+  </a>
+</article>

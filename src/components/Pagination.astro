@@ -1,0 +1,70 @@
+---
+/**
+ * 分页组件
+ */
+export interface Props {
+  currentPage: number;
+  totalPages: number;
+  basePath: string;
+}
+
+const { currentPage, totalPages, basePath } = Astro.props;
+
+function getPageUrl(page: number): string {
+  const cleanBase = basePath.endsWith('/') ? basePath.slice(0, -1) : basePath;
+  const pathname = page === 1 ? (cleanBase || '/') : `${cleanBase}/${page}`;
+  return `${pathname}#article-list`;
+}
+
+// 生成分页按钮范围
+const range: (number | '...')[] = [];
+const delta = 2;
+
+for (let i = 1; i <= totalPages; i++) {
+  if (
+    i === 1 ||
+    i === totalPages ||
+    (i >= currentPage - delta && i <= currentPage + delta)
+  ) {
+    range.push(i);
+  } else if (range[range.length - 1] !== '...') {
+    range.push('...');
+  }
+}
+---
+
+{totalPages > 1 && (
+  <nav class="flex items-center justify-center gap-2" aria-label="分页导航">
+    {currentPage > 1 ? (
+      <a href={getPageUrl(currentPage - 1)} aria-label="上一页" class="px-3 py-2 rounded-md border border-[var(--line)] text-[var(--ink)] hover:border-[var(--ink)] transition-colors text-sm font-medium">
+        上一页
+      </a>
+    ) : (
+      <span class="px-3 py-2 rounded-md border border-[var(--line)] text-[var(--muted-light)] opacity-60 cursor-not-allowed text-sm font-medium">
+        上一页
+      </span>
+    )}
+
+    <div class="flex items-center gap-1 mx-2">
+    {range.map(item => (
+      item === '...' ? (
+        <span class="px-2 text-[var(--muted-light)]">…</span>
+      ) : item === currentPage ? (
+        <span class="w-9 h-9 flex items-center justify-center rounded-md bg-[var(--ink)] text-[var(--paper-card)] font-medium text-sm" aria-current="page">{item}</span>
+      ) : (
+        <a href={getPageUrl(item as number)} class="w-9 h-9 flex items-center justify-center rounded-md text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--paper-soft)] transition-colors text-sm">{item}</a>
+      )
+    ))}
+    </div>
+
+    {currentPage < totalPages ? (
+      <a href={getPageUrl(currentPage + 1)} aria-label="下一页" class="px-3 py-2 rounded-md border border-[var(--line)] text-[var(--ink)] hover:border-[var(--ink)] transition-colors text-sm font-medium">
+        下一页
+      </a>
+    ) : (
+      <span class="px-3 py-2 rounded-md border border-[var(--line)] text-[var(--muted-light)] opacity-60 cursor-not-allowed text-sm font-medium">
+        下一页
+      </span>
+    )}
+  </nav>
+)}

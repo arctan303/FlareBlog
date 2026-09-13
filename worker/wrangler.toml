@@ -1,0 +1,25 @@
+name = "flareblog-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# D1 数据库绑定（Worker 内部通过 env.DB 访问）
+# - 途径 A（CLI 部署）：运行 `npx wrangler d1 create flareblog-db`，将返回的 UUID 替换下方的 database_id。
+# - 途径 B（控制台绑定）：在 Cloudflare 网页后台创建同名库并由 Worker 设置 -> Bindings 手动关联。
+[[d1_databases]]
+binding = "DB"
+database_name = "flareblog-db"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+[vars]
+# 允许跨域访问 API 的前端来源（逗号分隔）
+CORS_ORIGINS = "https://your-domain.example, http://127.0.0.1:4321, http://localhost:4321"
+# Turnstile 站点密钥（公开键）。在 Cloudflare Dashboard 创建 Turnstile 小部件后填入。
+# 留空则前端不显示人机验证组件。
+TURNSTILE_SITE_KEY = ""
+
+# -----------------------------------------------------------------------------
+# ⚠️ 敏感凭据通过 Wrangler Secret 注入（不要写进本文件）：
+#   npx wrangler secret put BUILD_API_TOKEN       # 静态构建 API 令牌
+#   npx wrangler secret put ADMIN_API_KEY         # 管理接口密钥
+#   npx wrangler secret put TURNSTILE_SECRET_KEY  # 可选：未配置时评论跳过人机验证
+# -----------------------------------------------------------------------------

@@ -1,0 +1,777 @@
+---
+import { Icon } from 'astro-icon/components';
+/**
+ * 文章详情页
+ * 构建时从 API 获取所有文章 ID，为每篇生成静态页面
+ */
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import CommentSection from '../../components/CommentSection.astro';
+import ViewCounter from '../../components/ViewCounter.astro';
+import { getAllArticles, getArticle, getArticleComments } from '../../lib/api';
+import { formatDate, estimateReadingTime, parseCategories } from '../../lib/utils';
+
+import { marked } from 'marked';
+import { sanitizeArticleHtml } from '../../lib/sanitizeArticleHtml';
+import {
+  decodeArticleImageAttribute,
+  getArticleImageDescription,
+} from '../../lib/articleImageLightbox';
+
+// SSG: 生成所有文章的静态路由
+export async function getStaticPaths() {
+  const articles = await getAllArticles();
+  return articles.map(article => ({
+    params: { id: String(article.id) },
+  }));
+}
+
+const { id } = Astro.params;
+const article = await getArticle(Number(id));
+const initialCommentsRes = await getArticleComments(Number(id));
+const categories = parseCategories(article.category);
+const readingTime = estimateReadingTime(article.content);
+let htmlContent: string = article.html_cache || await marked.parse(article.content);
+htmlContent = sanitizeArticleHtml(htmlContent);
+
+// 兼容旧文章：仅把完整的独立加粗段落标记为强调行，不影响段首加粗正文。
+htmlContent = htmlContent.replace(
+  /<p>\s*(<strong>[\s\S]*?<\/strong>)\s*<\/p>/gi,
+  '<p class="article-emphasis">$1</p>'
+);
+
+function getImageAttr(attrs: string, name: string): string {
+  const match = attrs.match(new RegExp(`(?:^|\\s)${name}=(["'])(.*?)\\1`, 'i'));
+  return decodeArticleImageAttribute(match?.[2]?.trim() || '');
+}
+
+function escapeHtmlAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderArticleImage(rawAttrs: string): string {
+  let attrs = rawAttrs.replace(/\s*\/\s*$/, '').trim();
+  attrs = attrs.replace(/\sclass=(["']).*?\1/i, '');
+
+  if (!/\sloading=/i.test(attrs)) {
+    attrs += ' loading="lazy"';
+  }
+  if (!/\sdecoding=/i.test(attrs)) {
+    attrs += ' decoding="async"';
+  }
+
+  const title = getImageAttr(attrs, 'title');
+  const alt = getImageAttr(attrs, 'alt');
+  const description = getArticleImageDescription(title, alt);
+  const descriptionAttribute = escapeHtmlAttr(description);
+  const openLabel = description
+    ? `放大查看图片：${description}`
+    : '放大查看图片';
+
+  return `<figure class="article-image">
+    <button type="button" class="article-image-frame article-image-open" data-article-image-open data-image-description="${descriptionAttribute}" aria-label="${escapeHtmlAttr(openLabel)}">
+      <span class="article-image-placeholder absolute inset-0 flex items-center justify-center animate-pulse">
+      <svg class="w-10 h-10 text-[var(--line-strong)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>
+      </span>
+      <img ${attrs} class="article-image-img opacity-0 transition-opacity duration-300 ease-out" />
+    </button>
+  </figure>`;
+}
+
+// 为所有图片自动添加懒加载、异步解码属性、尺寸限制和图注。
+const imageFigures: string[] = [];
+htmlContent = htmlContent.replace(
+  /<p>\s*<img\s+([^>]+)>\s*<\/p>|<img\s+([^>]+)>/gi,
+  (_match, wrappedAttrs, inlineAttrs) => {
+    const token = `%%ARTICLE_IMAGE_${imageFigures.length}%%`;
+    imageFigures.push(renderArticleImage(wrappedAttrs || inlineAttrs));
+    return token;
+  }
+);
+imageFigures.forEach((figure, index) => {
+  htmlContent = htmlContent.replace(`%%ARTICLE_IMAGE_${index}%%`, figure);
+});
+const publishedAt = new Date(article.created_at * 1000).toISOString();
+const modifiedAt = new Date((article.updated_at || article.created_at) * 1000).toISOString();
+---
+
+<BaseLayout
+  title={article.title}
+  description={article.summary || undefined}
+  ogType="article"
+>
+  <div class="reading-progress fixed inset-x-0 z-30 h-px pointer-events-none" aria-hidden="true">
+    <div id="reading-progress-bar" class="h-full w-full origin-left scale-x-0 bg-[var(--ink)] opacity-80 will-change-transform"></div>
+  </div>
+  <div
+    id="article-main-container"
+    class="transition-transform duration-300 ease-in-out w-full origin-left"
+    itemscope
+    itemtype="https://schema.org/BlogPosting"
+  >
+    <meta itemprop="dateModified" content={modifiedAt} />
+    <meta itemprop="image" content="https://your-domain.example/favicon.png" />
+    {article.summary && <meta itemprop="description" content={article.summary} />}
+    <div class="animate-in page-enter">
+    <button 
+        data-back-button
+        data-article-back
+        class="group flex items-center gap-2 text-sm text-[var(--muted)] hover:text-[var(--ink)] transition-colors mb-10 cursor-pointer"
+    >
+        <Icon name="lucide:arrow-left" class="group-hover:-translate-x-1 transition-transform" aria-hidden="true" /> 返回文章列表
+    </button>
+
+    <header class="stagger-item-top max-w-[46rem] mx-auto mb-10 border-b border-[var(--line)] pb-5" style="--stagger-idx: 1;">
+        <h1 itemprop="headline" class="kami-serif text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-normal text-[var(--ink-strong)] leading-tight mb-6 transition-colors">
+            {article.title}
+        </h1>
+        <div>
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-[var(--muted)]">
+                <span itemprop="author" itemscope itemtype="https://schema.org/Person" class="inline-flex items-center font-medium text-[var(--ink)]">
+                    <meta itemprop="url" content="https://your-domain.example/about" />
+                    <span class="font-normal text-[var(--muted)]">作者：</span>
+                    <span itemprop="name">{article.author || 'FlareBlog'}</span>
+                </span>
+                <span>·</span>
+                {article.last_editor && (
+                    <>
+                        <span itemprop="editor" itemscope itemtype="https://schema.org/Person" class="inline-flex items-center font-medium text-[var(--ink)]">
+                            <span class="font-normal text-[var(--muted)]">编辑：</span>
+                            <span itemprop="name">{article.last_editor}</span>
+                        </span>
+                        <span>·</span>
+                    </>
+                )}
+                <span class="flex items-center gap-1.5">
+                    <Icon name="lucide:calendar-days" class="text-xs" aria-hidden="true" />
+                    <time itemprop="datePublished" datetime={publishedAt}>
+                        {formatDate(article.created_at)}
+                    </time>
+                </span>
+                <span>·</span>
+                <span class="flex items-center gap-1.5">
+                    <Icon name="lucide:clock" class="text-xs" aria-hidden="true" />
+                    预计阅读 {readingTime} 分钟
+                </span>
+                <span>·</span>
+                <span class="flex items-center gap-1.5">
+                    <Icon name="lucide:eye" class="text-xs" aria-hidden="true" />
+                    <ViewCounter articleId={article.id} initialViews={article.views} />
+                </span>
+            </div>
+            <div class="flex flex-wrap items-center gap-x-2.5 gap-y-2 mt-4 pt-4 border-t border-[var(--line)]">
+                {categories.map(cat => (
+                <a href={`/category/${encodeURIComponent(cat)}`} class="inline-flex items-center gap-1.5 rounded-md border border-[var(--line)] px-2 py-1 text-[var(--ink)] text-xs transition-colors hover:border-[var(--line-strong)] hover:text-[var(--ink-strong)]">
+                    <Icon name="lucide:folder" class="text-xs" aria-hidden="true" />
+                    {cat}
+                </a>
+                ))}
+                {categories.length > 0 && <span class="h-3.5 w-px bg-[var(--line)] self-center mx-0.5" aria-hidden="true"></span>}
+                <button 
+                    data-share-article
+                    class="group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[var(--paper-soft)] border border-[var(--line)] text-xs text-[var(--muted)] hover:text-[var(--ink-strong)] hover:border-[var(--line-strong)] hover:bg-[var(--paper-card)] active:scale-95 transition-all duration-200 cursor-pointer"
+                    title="分享文章"
+                >
+                    <Icon name="lucide:share-2" class="text-xs transition-transform duration-200 group-hover:scale-105" aria-hidden="true" />
+                    <span>分享</span>
+                </button>
+                <span class="inline-flex items-center gap-1 text-xs text-[var(--muted-light)] pl-0.5" title="内容已通过安全审核">
+                    <Icon name="lucide:shield-check" class="text-xs shrink-0" aria-hidden="true" />
+                    <span class="hidden sm:inline">内容已通过安全审核</span>
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <article class="stagger-item-bottom max-w-[46rem] mx-auto mb-16 text-base prose" data-post-id={article.id} data-pagefind-body style="--stagger-idx: 3;">
+        <!-- Pagefind Meta Information -->
+        <div class="hidden">
+            <span data-pagefind-meta={`date:${new Date(article.created_at * 1000).toISOString().split('T')[0]}`}></span>
+            <span data-pagefind-meta={`author:${article.author || 'FlareBlog'}`}></span>
+            <span data-pagefind-meta={`views:${article.views}`}></span>
+            {categories.map(cat => (
+                <span data-pagefind-meta={`category:${cat}`}></span>
+            ))}
+        </div>
+        <div id="article-body" itemprop="articleBody" set:html={htmlContent} />
+    </article>
+
+    <!-- 评论区 -->
+    <div class="scroll-reveal max-w-[46rem] mx-auto">
+      <CommentSection articleId={article.id} initialComments={initialCommentsRes.data} />
+    </div>
+    </div>
+  </div>
+
+  <dialog id="article-image-lightbox" class="article-image-lightbox" aria-label="图片放大查看">
+    <div class="article-image-lightbox-shell">
+      <button
+        type="button"
+        id="article-image-lightbox-close"
+        class="article-image-lightbox-close"
+        aria-label="关闭图片查看"
+        title="关闭 (Esc)"
+      >
+        <Icon name="lucide:x" class="w-5 h-5" aria-hidden="true" />
+      </button>
+
+      <div id="article-image-lightbox-toolbar" class="article-image-lightbox-toolbar" role="toolbar" aria-label="图片缩放控制">
+        <button type="button" id="lightbox-zoom-out" class="lightbox-tool-btn" aria-label="缩小 (-)" title="缩小 (-)">
+          <Icon name="lucide:minus" class="w-3.5 h-3.5" aria-hidden="true" />
+        </button>
+        <button type="button" id="lightbox-zoom-toggle" class="lightbox-tool-btn lightbox-tool-badge" aria-label="切换缩放比例" title="点击切换缩放比例">
+          <span id="lightbox-zoom-value">100%</span>
+        </button>
+        <button type="button" id="lightbox-zoom-in" class="lightbox-tool-btn" aria-label="放大 (+)" title="放大 (+)">
+          <Icon name="lucide:plus" class="w-3.5 h-3.5" aria-hidden="true" />
+        </button>
+        <div class="lightbox-tool-divider" aria-hidden="true"></div>
+        <button type="button" id="lightbox-zoom-reset" class="lightbox-tool-btn" aria-label="适应屏幕 (0)" title="适应屏幕 (0)">
+          <Icon name="lucide:rotate-ccw" class="w-3.5 h-3.5" aria-hidden="true" />
+        </button>
+      </div>
+
+      <figure class="article-image-lightbox-figure">
+        <div class="article-image-lightbox-viewport" id="article-image-lightbox-viewport">
+          <img id="article-image-lightbox-image" class="article-image-lightbox-image" alt="" draggable="false" />
+        </div>
+        <figcaption id="article-image-lightbox-caption" class="article-image-lightbox-caption" hidden></figcaption>
+      </figure>
+    </div>
+  </dialog>
+  
+  <!-- 文章划线浮动工具条 -->
+  <div id="text-selection-toolbar" class="text-select-toolbar" role="toolbar" aria-label="选中文字操作" aria-hidden="true" inert>
+    <button id="tsb-copy" class="tsb-btn" title="复制">
+      <Icon name="lucide:copy" class="tsb-icon" id="tsb-copy-icon" aria-hidden="true" />
+      <Icon name="lucide:check" class="tsb-icon hidden" id="tsb-check-icon" aria-hidden="true" />
+      <span id="tsb-copy-label">复制</span>
+    </button>
+    <div class="tsb-arrow"></div>
+  </div>
+
+  <script>
+    import {
+      canOpenArticleImage,
+      clampZoomScale,
+      calculatePanBounds,
+      clampPanOffset,
+      getNextZoomScale,
+    } from '../../lib/articleImageLightbox';
+
+    let articleMotionController: AbortController | null = null;
+    let imageObserver: IntersectionObserver | null = null;
+    let progressFrame = 0;
+
+    function revealArticleImage(image: HTMLImageElement): void {
+      image.classList.remove('opacity-0');
+      const frame = image.parentElement;
+      if (frame) {
+        frame.style.minHeight = 'auto';
+        imageObserver?.unobserve(frame);
+      }
+      image.previousElementSibling?.remove();
+    }
+
+    function handleArticleImageError(image: HTMLImageElement): void {
+      const frame = image.parentElement;
+      if (frame) {
+        imageObserver?.unobserve(frame);
+        frame.classList.remove('is-near');
+      }
+      const placeholder = image.previousElementSibling as HTMLElement | null;
+      if (placeholder) {
+        placeholder.classList.remove('animate-pulse');
+        placeholder.setAttribute('role', 'img');
+        placeholder.setAttribute('aria-label', '图片加载失败');
+      }
+      const trigger = image.closest<HTMLButtonElement>('[data-article-image-open]');
+      if (trigger) {
+        trigger.disabled = true;
+        trigger.classList.add('is-image-error');
+        trigger.setAttribute('aria-label', '图片加载失败，无法放大');
+      }
+    }
+
+    document.addEventListener('astro:page-load', () => {
+      articleMotionController?.abort();
+      imageObserver?.disconnect();
+      if (progressFrame) cancelAnimationFrame(progressFrame);
+
+      articleMotionController = new AbortController();
+      const { signal } = articleMotionController;
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      const progressBar = document.getElementById('reading-progress-bar');
+      const articleBody = document.getElementById('article-body');
+      const updateReadingProgress = (): void => {
+        progressFrame = 0;
+        if (!progressBar || !articleBody) return;
+        const articleTop = window.scrollY + articleBody.getBoundingClientRect().top - 80;
+        const articleEnd = articleTop + articleBody.offsetHeight - window.innerHeight + 80;
+        const distance = Math.max(1, articleEnd - articleTop);
+        const progress = Math.min(1, Math.max(0, (window.scrollY - articleTop) / distance));
+        progressBar.style.transform = `scaleX(${progress})`;
+      };
+      const queueReadingProgress = (): void => {
+        if (!progressFrame) progressFrame = requestAnimationFrame(updateReadingProgress);
+      };
+
+      updateReadingProgress();
+      window.addEventListener('scroll', queueReadingProgress, { passive: true, signal });
+      window.addEventListener('resize', queueReadingProgress, { signal });
+
+      if (!prefersReducedMotion) {
+        imageObserver = new IntersectionObserver(entries => {
+          entries.forEach(entry => entry.target.classList.toggle('is-near', entry.isIntersecting));
+        }, { rootMargin: '300px 0px' });
+      }
+
+      document.querySelectorAll<HTMLImageElement>('.article-image-img').forEach(image => {
+        if (image.complete && image.naturalWidth > 0) revealArticleImage(image);
+        else if (image.complete) handleArticleImageError(image);
+        else {
+          image.addEventListener('load', () => revealArticleImage(image), { once: true, signal });
+          image.addEventListener('error', () => handleArticleImageError(image), { once: true, signal });
+          const frame = image.closest('.article-image-frame');
+          if (frame && imageObserver) imageObserver.observe(frame);
+        }
+      });
+
+      const imageLightbox = document.getElementById('article-image-lightbox') as HTMLDialogElement | null;
+      const lightboxImage = document.getElementById('article-image-lightbox-image') as HTMLImageElement | null;
+      const lightboxCaption = document.getElementById('article-image-lightbox-caption');
+      const lightboxClose = document.getElementById('article-image-lightbox-close') as HTMLButtonElement | null;
+      const btnZoomIn = document.getElementById('lightbox-zoom-in') as HTMLButtonElement | null;
+      const btnZoomOut = document.getElementById('lightbox-zoom-out') as HTMLButtonElement | null;
+      const btnZoomToggle = document.getElementById('lightbox-zoom-toggle') as HTMLButtonElement | null;
+      const btnZoomReset = document.getElementById('lightbox-zoom-reset') as HTMLButtonElement | null;
+      const zoomValueText = document.getElementById('lightbox-zoom-value');
+      let lightboxTrigger: HTMLButtonElement | null = null;
+
+      let currentScale = 1;
+      let currentX = 0;
+      let currentY = 0;
+      let isDragging = false;
+      let dragStartX = 0;
+      let dragStartY = 0;
+      let dragOriginX = 0;
+      let dragOriginY = 0;
+      let hasDragged = false;
+      let initialPinchDist = 0;
+      let initialPinchScale = 1;
+
+      const CLOSE_ANIM_MS = 260;
+
+      const updateTransform = (smooth = true): void => {
+        if (!lightboxImage) return;
+        if (smooth) {
+          lightboxImage.style.transition = 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1)';
+        } else {
+          lightboxImage.style.transition = 'none';
+        }
+        lightboxImage.style.transform = `translate3d(${currentX}px, ${currentY}px, 0px) scale(${currentScale})`;
+
+        const percent = Math.round(currentScale * 100);
+        if (zoomValueText) zoomValueText.textContent = `${percent}%`;
+        if (btnZoomOut) btnZoomOut.disabled = currentScale <= 1.01;
+        if (btnZoomIn) btnZoomIn.disabled = currentScale >= 4.99;
+
+        if (currentScale > 1.01) {
+          lightboxImage.classList.add('is-zoomed');
+          lightboxImage.style.cursor = isDragging ? 'grabbing' : 'grab';
+          if (lightboxCaption) lightboxCaption.style.opacity = '0.35';
+        } else {
+          lightboxImage.classList.remove('is-zoomed');
+          lightboxImage.style.cursor = 'zoom-in';
+          if (lightboxCaption) lightboxCaption.style.opacity = '1';
+        }
+      };
+
+      const setZoom = (nextScale: number, originX?: number, originY?: number, smooth = true): void => {
+        const clamped = clampZoomScale(nextScale);
+        if (clamped <= 1.01) {
+          currentScale = 1;
+          currentX = 0;
+          currentY = 0;
+        } else {
+          if (originX !== undefined && originY !== undefined && currentScale !== clamped) {
+            const factor = clamped / currentScale;
+            currentX = originX - (originX - currentX) * factor;
+            currentY = originY - (originY - currentY) * factor;
+          }
+          currentScale = clamped;
+          const bounds = calculatePanBounds(
+            currentScale,
+            lightboxImage?.offsetWidth || 0,
+            lightboxImage?.offsetHeight || 0,
+            window.innerWidth,
+            window.innerHeight
+          );
+          const clampedPos = clampPanOffset(currentX, currentY, bounds);
+          currentX = clampedPos.x;
+          currentY = clampedPos.y;
+        }
+        updateTransform(smooth);
+      };
+
+      const closeImageLightbox = (): void => {
+        if (!imageLightbox?.open || imageLightbox.classList.contains('is-closing')) return;
+        imageLightbox.classList.add('is-closing');
+        const shell = imageLightbox.querySelector('.article-image-lightbox-shell');
+        const onEnd = (): void => {
+          imageLightbox.classList.remove('is-closing');
+          imageLightbox.close();
+        };
+        if (shell) {
+          shell.addEventListener('animationend', onEnd, { once: true });
+          setTimeout(onEnd, CLOSE_ANIM_MS + 50);
+        } else {
+          onEnd();
+        }
+      };
+
+      if (imageLightbox && lightboxImage && lightboxCaption && lightboxClose) {
+        document.querySelectorAll<HTMLButtonElement>('[data-article-image-open]').forEach(trigger => {
+          trigger.addEventListener('click', () => {
+            const sourceImage = trigger.querySelector<HTMLImageElement>('.article-image-img');
+            if (!sourceImage || !canOpenArticleImage(sourceImage)) return;
+            lightboxTrigger = trigger;
+            lightboxImage.src = sourceImage.currentSrc || sourceImage.src;
+            lightboxImage.alt = sourceImage.alt || '';
+            const description = trigger.dataset.imageDescription?.trim() || '';
+            lightboxCaption.textContent = description;
+            lightboxCaption.hidden = !description;
+            setZoom(1, undefined, undefined, false);
+            document.body.classList.add('has-article-image-lightbox');
+            imageLightbox.classList.remove('is-closing');
+            imageLightbox.showModal();
+            lightboxClose.focus();
+          }, { signal });
+        });
+
+        // 鼠标滚轮缩放
+        imageLightbox.addEventListener('wheel', event => {
+          if (!imageLightbox.open || imageLightbox.classList.contains('is-closing')) return;
+          event.preventDefault();
+          const originX = event.clientX - window.innerWidth / 2;
+          const originY = event.clientY - window.innerHeight / 2;
+          const factor = event.deltaY < 0 ? 1.18 : 0.85;
+          setZoom(currentScale * factor, originX, originY, false);
+        }, { passive: false, signal });
+
+        // 点击切换缩放
+        lightboxImage.addEventListener('click', event => {
+          if (hasDragged) return;
+          const originX = event.clientX - window.innerWidth / 2;
+          const originY = event.clientY - window.innerHeight / 2;
+
+          if (currentScale > 1.01) {
+            setZoom(1, undefined, undefined, true);
+          } else {
+            setZoom(2.2, originX, originY, true);
+          }
+        }, { signal });
+
+        // 指针拖拽平移
+        lightboxImage.addEventListener('pointerdown', event => {
+          if (event.button !== 0) return;
+          dragStartX = event.clientX;
+          dragStartY = event.clientY;
+          dragOriginX = currentX;
+          dragOriginY = currentY;
+          hasDragged = false;
+
+          if (currentScale > 1.01) {
+            isDragging = true;
+            lightboxImage.setPointerCapture(event.pointerId);
+            lightboxImage.style.cursor = 'grabbing';
+            lightboxImage.style.transition = 'none';
+          }
+        }, { signal });
+
+        lightboxImage.addEventListener('pointermove', event => {
+          if (!isDragging) return;
+          const dx = event.clientX - dragStartX;
+          const dy = event.clientY - dragStartY;
+          if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+            hasDragged = true;
+          }
+          const bounds = calculatePanBounds(
+            currentScale,
+            lightboxImage.offsetWidth,
+            lightboxImage.offsetHeight,
+            window.innerWidth,
+            window.innerHeight
+          );
+          const clamped = clampPanOffset(dragOriginX + dx, dragOriginY + dy, bounds);
+          currentX = clamped.x;
+          currentY = clamped.y;
+          updateTransform(false);
+        }, { signal });
+
+        const endDrag = (event: PointerEvent): void => {
+          if (!isDragging) return;
+          isDragging = false;
+          if (lightboxImage.hasPointerCapture(event.pointerId)) {
+            lightboxImage.releasePointerCapture(event.pointerId);
+          }
+          updateTransform(true);
+        };
+        lightboxImage.addEventListener('pointerup', endDrag, { signal });
+        lightboxImage.addEventListener('pointercancel', endDrag, { signal });
+
+        // 移动端双指手势
+        imageLightbox.addEventListener('touchstart', event => {
+          if (event.touches.length === 2) {
+            const t1 = event.touches[0];
+            const t2 = event.touches[1];
+            initialPinchDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+            initialPinchScale = currentScale;
+          }
+        }, { passive: true, signal });
+
+        imageLightbox.addEventListener('touchmove', event => {
+          if (event.touches.length === 2 && initialPinchDist > 0) {
+            event.preventDefault();
+            const t1 = event.touches[0];
+            const t2 = event.touches[1];
+            const currentDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+            const ratio = currentDist / initialPinchDist;
+            const midX = (t1.clientX + t2.clientX) / 2 - window.innerWidth / 2;
+            const midY = (t1.clientY + t2.clientY) / 2 - window.innerHeight / 2;
+            setZoom(initialPinchScale * ratio, midX, midY, false);
+          }
+        }, { passive: false, signal });
+
+        imageLightbox.addEventListener('touchend', event => {
+          if (event.touches.length < 2 && initialPinchDist > 0) {
+            initialPinchDist = 0;
+            if (currentScale < 1.05) {
+              setZoom(1, undefined, undefined, true);
+            } else {
+              updateTransform(true);
+            }
+          }
+        }, { passive: true, signal });
+
+        // 工具栏按钮控制
+        btnZoomIn?.addEventListener('click', () => setZoom(currentScale + 0.5, 0, 0, true), { signal });
+        btnZoomOut?.addEventListener('click', () => setZoom(currentScale - 0.5, 0, 0, true), { signal });
+        btnZoomToggle?.addEventListener('click', () => setZoom(getNextZoomScale(currentScale), 0, 0, true), { signal });
+        btnZoomReset?.addEventListener('click', () => setZoom(1, 0, 0, true), { signal });
+
+        // 键盘快捷键
+        document.addEventListener('keydown', event => {
+          if (!imageLightbox.open || imageLightbox.classList.contains('is-closing')) return;
+          if (event.key === '=' || event.key === '+') {
+            event.preventDefault();
+            setZoom(currentScale + 0.5, 0, 0, true);
+          } else if (event.key === '-' || event.key === '_') {
+            event.preventDefault();
+            setZoom(currentScale - 0.5, 0, 0, true);
+          } else if (event.key === '0') {
+            event.preventDefault();
+            setZoom(1, 0, 0, true);
+          } else if (currentScale > 1.01) {
+            const STEP = 60;
+            if (event.key === 'ArrowLeft') { currentX += STEP; updateTransform(true); }
+            else if (event.key === 'ArrowRight') { currentX -= STEP; updateTransform(true); }
+            else if (event.key === 'ArrowUp') { currentY += STEP; updateTransform(true); }
+            else if (event.key === 'ArrowDown') { currentY -= STEP; updateTransform(true); }
+          }
+        }, { signal });
+
+        lightboxClose.addEventListener('click', closeImageLightbox, { signal });
+        imageLightbox.addEventListener('click', event => {
+          const target = event.target as HTMLElement;
+          if (target === imageLightbox || target.classList.contains('article-image-lightbox-shell') || target.classList.contains('article-image-lightbox-viewport')) {
+            if (currentScale > 1.05) {
+              setZoom(1, undefined, undefined, true);
+            } else {
+              closeImageLightbox();
+            }
+          }
+        }, { signal });
+        imageLightbox.addEventListener('close', () => {
+          imageLightbox.classList.remove('is-closing');
+          document.body.classList.remove('has-article-image-lightbox');
+          setZoom(1, undefined, undefined, false);
+          lightboxImage.removeAttribute('src');
+          lightboxTrigger?.focus({ preventScroll: true });
+          lightboxTrigger = null;
+        }, { signal });
+        signal.addEventListener('abort', () => {
+          imageLightbox.classList.remove('is-closing');
+          closeImageLightbox();
+          document.body.classList.remove('has-article-image-lightbox');
+        }, { once: true });
+      }
+
+      const shareButton = document.querySelector<HTMLButtonElement>('[data-share-article]');
+      if (shareButton) {
+        shareButton.addEventListener('click', async () => {
+          const url = window.location.href;
+          await navigator.clipboard.writeText(url);
+          if (navigator.share) {
+            await navigator.share({ title: document.title, url }).catch(() => undefined);
+          }
+          shareButton.title = '链接已复制';
+        }, { signal });
+      }
+
+      // --- Text Selection Toolbar ---
+      const toolbar = document.getElementById('text-selection-toolbar') as HTMLElement;
+      const articleBodyEl = document.getElementById('article-body') as HTMLElement;
+      const copyBtn = document.getElementById('tsb-copy') as HTMLButtonElement;
+      const copyIcon = document.getElementById('tsb-copy-icon') as HTMLElement;
+      const checkIcon = document.getElementById('tsb-check-icon') as HTMLElement;
+      const copyLabel = document.getElementById('tsb-copy-label') as HTMLElement;
+
+      if (toolbar && articleBodyEl && copyBtn) {
+        let selectedText = '';
+        let copyResetTimer = 0;
+        let selectionSettleTimer = 0;
+        const touchSelectionMode = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+
+        function hideToolbar(): void {
+          toolbar.classList.remove('is-visible');
+          toolbar.setAttribute('aria-hidden', 'true');
+          toolbar.setAttribute('inert', '');
+        }
+
+        function showToolbar(rect: DOMRect): void {
+          // Reset copy button state
+          if (copyIcon && checkIcon && copyLabel) {
+            copyIcon.classList.remove('hidden');
+            checkIcon.classList.add('hidden');
+            copyLabel.textContent = '复制';
+          }
+
+          // Position: center below the selection by default (avoids Edge mini menu overlap)
+          const toolbarWidth = toolbar.offsetWidth || 160;
+          const toolbarHeight = toolbar.offsetHeight || 40;
+          const gap = 8;
+          let left = rect.left + rect.width / 2 - toolbarWidth / 2 + window.scrollX;
+          
+          // Keep within viewport horizontally
+          const viewportPadding = 8;
+          left = Math.max(viewportPadding + window.scrollX, Math.min(left, window.scrollX + window.innerWidth - toolbarWidth - viewportPadding));
+
+          let top = rect.bottom + gap + window.scrollY;
+
+          // If not enough space below, show above
+          if (rect.bottom + toolbarHeight + gap + 8 > window.innerHeight) {
+            top = rect.top - toolbarHeight - gap + window.scrollY;
+            toolbar.classList.remove('is-below');
+          } else {
+            toolbar.classList.add('is-below');
+          }
+
+          toolbar.style.left = `${left}px`;
+          toolbar.style.top = `${top}px`;
+          toolbar.removeAttribute('inert');
+          toolbar.setAttribute('aria-hidden', 'false');
+          toolbar.classList.add('is-visible');
+        }
+
+        function tryShowToolbar(): void {
+          const selection = window.getSelection();
+          if (!selection || selection.isCollapsed || !selection.rangeCount) {
+            hideToolbar();
+            return;
+          }
+
+          const text = selection.toString().trim();
+          if (!text || text.length < 2) {
+            hideToolbar();
+            return;
+          }
+
+          // Check if selection is within the article body
+          const range = selection.getRangeAt(0);
+          if (!articleBodyEl.contains(range.commonAncestorContainer)) {
+            hideToolbar();
+            return;
+          }
+
+          selectedText = text;
+          const rect = range.getBoundingClientRect();
+          showToolbar(rect);
+        }
+
+        function scheduleToolbar(delay = 140): void {
+          if (selectionSettleTimer) window.clearTimeout(selectionSettleTimer);
+          selectionSettleTimer = window.setTimeout(() => {
+            selectionSettleTimer = 0;
+            tryShowToolbar();
+          }, delay);
+        }
+
+        // Show toolbar only after selection is complete (mouseup / touchend)
+        articleBodyEl.addEventListener('mouseup', () => {
+          scheduleToolbar(10);
+        }, { signal });
+
+        articleBodyEl.addEventListener('touchend', () => {
+          scheduleToolbar(120);
+        }, { signal });
+
+        // Mobile browsers often finalize their native long-press selection after
+        // touchend. Wait for selectionchange to settle instead of missing it.
+        document.addEventListener('selectionchange', () => {
+          if (touchSelectionMode) scheduleToolbar(160);
+        }, { signal });
+
+        // Also handle keyboard selection (Shift+Arrow, Ctrl+A, etc.)
+        document.addEventListener('keyup', (e) => {
+          if (e.shiftKey || e.ctrlKey || e.metaKey) {
+            setTimeout(tryShowToolbar, 10);
+          }
+        }, { signal });
+
+        // Hide immediately when starting a new selection or clicking
+        document.addEventListener('pointerdown', (e) => {
+          if (!toolbar.contains(e.target as Node)) {
+            hideToolbar();
+          }
+        }, { signal });
+
+        // Hide on scroll
+        window.addEventListener('scroll', hideToolbar, { passive: true, signal });
+
+        signal.addEventListener('abort', () => {
+          if (selectionSettleTimer) window.clearTimeout(selectionSettleTimer);
+          if (copyResetTimer) window.clearTimeout(copyResetTimer);
+        }, { once: true });
+
+        // Copy button
+        copyBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!selectedText) return;
+
+          try {
+            await navigator.clipboard.writeText(selectedText);
+            if (copyIcon && checkIcon && copyLabel) {
+              copyIcon.classList.add('hidden');
+              checkIcon.classList.remove('hidden');
+              copyLabel.textContent = '已复制';
+            }
+            if (copyResetTimer) clearTimeout(copyResetTimer);
+            copyResetTimer = window.setTimeout(() => {
+              hideToolbar();
+              copyResetTimer = 0;
+            }, 1200);
+          } catch {
+            // Clipboard API not available
+          }
+        }, { signal });
+      }
+    });
+  </script>
+</BaseLayout>
